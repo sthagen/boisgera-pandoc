@@ -2,7 +2,7 @@
 !!! warning
     This documentation is dedicated to the [latest version of the project
     available on github](https://github.com/boisgera/pandoc). 
-    It is automatically tested against pandoc 2.14.1,
+    It is automatically tested against pandoc 2.14.2,
     [the latest release of pandoc](https://pandoc.org/releases.html) so far.
 
 Overview
@@ -15,20 +15,22 @@ This project brings [Pandoc]'s data model for markdown documents to Python:
 
 It can be used to analyze, create and transform documents, in Python :
 
-    >>> import pandoc
-    >>> text = "Hello world!"
-    >>> doc = pandoc.read(text)
-    >>> doc
-    Pandoc(Meta({}), [Para([Str('Hello'), Space(), Str('world!')])])
+``` pycon
+>>> import pandoc
+>>> text = "Hello world!"
+>>> doc = pandoc.read(text)
+>>> doc
+Pandoc(Meta({}), [Para([Str('Hello'), Space(), Str('world!')])])
 
-    >>> paragraph = doc[1][0]
-    >>> paragraph
-    Para([Str('Hello'), Space(), Str('world!')])
-    >>> from pandoc.types import Str
-    >>> paragraph[0][2] = Str('Python!')
-    >>> text = pandoc.write(doc)
-    >>> print(text) # doctest: +NORMALIZE_WHITESPACE
-    Hello Python!
+>>> paragraph = doc[1][0]
+>>> paragraph
+Para([Str('Hello'), Space(), Str('world!')])
+>>> from pandoc.types import Str
+>>> paragraph[0][2] = Str('Python!')
+>>> text = pandoc.write(doc)
+>>> print(text) # doctest: +NORMALIZE_WHITESPACE
+Hello Python!
+```
 
 [Pandoc] is the general markup converter (and Haskell library) written by [John MacFarlane].
 

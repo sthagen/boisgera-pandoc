@@ -1,14 +1,14 @@
 !!! warning
     This documentation is dedicated to the [latest version of the project
     available on github](https://github.com/boisgera/pandoc). 
-    It is automatically tested against pandoc 2.14.1,
+    It is automatically tested against pandoc 2.14.2,
     [the latest release of pandoc](https://pandoc.org/releases.html) so far.
 
 
 Configuration
 ================================================================================
 
-```python
+``` python
 import pandoc
 ```
 
@@ -34,7 +34,6 @@ it is triggered only when no configuration is specified when
   - you import `pandoc.types` or
 
   - you call `pandoc.read` or `pandoc.write`. 
-
 
 
 Options
@@ -85,11 +84,11 @@ does not change the current configuration
 but returns a dictionary whose keys are `auto`, `path`, 
 `version` and `pandoc_types_version`, such as
 
-```python
+``` pycon
 >>> pandoc.configure(read=True) # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
 {'auto': True, 
  'path': ..., 
- 'version': '2.14.1', 
+ 'version': '2.14.2', 
  'pandoc_types_version': '1.22'}
 ```
 

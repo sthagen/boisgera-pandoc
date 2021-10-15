@@ -16,8 +16,8 @@ import strictyaml
 
 # Test Files
 # ------------------------------------------------------------------------------
-mkdocs_pages = strictyaml.load(open("mkdocs.yml").read())["pages"].data
-test_files = ["mkdocs/" + list(item.values())[0] for item in mkdocs_pages]
+mkdocs_nav = strictyaml.load(open("mkdocs.yml").read())["nav"].data
+test_files = ["mkdocs/" + list(item.values())[0] for item in mkdocs_nav]
 
 # Sandbox the Test Files
 # ------------------------------------------------------------------------------
@@ -35,7 +35,7 @@ for filename in test_files:
 # Tweak the Test Files
 # ------------------------------------------------------------------------------
 # For each file, find the python fences, see if they are in interpreter mode
-# or "code" mode. If they are in code mode, add the prompts then remove the 
+# or "code" mode. If they are in code mode, add the prompts then remove the
 # fences and indent the code lines.
 def promptize(src):
     "Add >>> or ... prompts to Python code"
@@ -55,10 +55,11 @@ def promptize(src):
             code = cc("\n".join(chunk))
             if code is not None:  # full statement
                 chunk = []  # start over
-        except: # pragma: no cover
+        except:  # pragma: no cover
             raise
     assert len(lines) == len(output)
     return "\n".join(output)
+
 
 def tweak(src):
     # Find code blocks with python fences,
@@ -66,13 +67,17 @@ def tweak(src):
     # then transform them into indented code blocks.
     lines = src.splitlines()
     chunks = {}
-    python, start, end, code = False, None, None, []
+    python, sep, start, end, code = False, None, None, None, []
     for i, line in enumerate(lines):
-        if line.startswith("```python") or line.startswith("``` python"):
+        if ( # match at least three backquotes, optional space, then python or pycon
+            re.match(r"\s*(`|~){3,}\s*py(c|th)on", line)
+        ):
+            sep = line.strip()[0] ; assert sep in "`~"
             start = i
             code.append("")
             python = True
-        elif line.startswith("```") and python is True:
+        elif python is True and 3*sep in line:
+            sep = None
             end = i + 1
             code.append("")
             python = False
@@ -101,7 +106,44 @@ os.chdir(tmp_dir)
 for filename in test_files:
     with open(filename, encoding="utf-8") as file:
         src = file.read()
+    if filename == "mkdocs/markdown.md":
+
+        src = "``` python\nimport pandoc\n```\n\n" + src
+
+        # Need to fetch markdown content, unident, wrap in ``` python block
+        # and add the text = """ stuff.
+        # Then add a ``` pycon block with repr stuff
+
+        pattern  = r'=== "Markdown"(?:(?:\n)|(?:[ ]{8}.*\n))*'
+        pattern += r'=== "Python"(?:(?:\n)|(?:[ ]{8}.*\n))*'
+
+        found = re.findall(pattern, src)
+        ritems = []
+        for item in found:
+
+            if "```" in item:
+                sep = "~~~"
+            else:
+                sep = "```"
+
+            ritem = item.strip()
+            ritem = re.sub("^[ ]{8}", "", ritem, flags=re.MULTILINE)
+            ritem = ritem.replace(
+                '=== "Markdown"\n\n', 
+                f'=== "Markdown"\n\n{sep} python\ntext = \\\nr"""')
+            ritem = ritem.replace(
+                '\n=== "Python"\n',
+                f'"""\n{sep}\n\n=== "Python"\n\n{sep} pycon\n>>> pandoc.read(text)'
+            )
+            ritem += f"\n{sep}\n\n"
+            ritems.append(ritem)
+
+        for item, ritem in zip(found, ritems):
+            src = src.replace(item, ritem)
+
+        # and in any case, "normal tweak"
     src = tweak(src)
+
     with open(filename, "w", encoding="utf-8") as file:
         file.write(src)
 
@@ -115,11 +157,11 @@ for filename in test_files:
     options = {"module_relative": False, "verbose": verbose}
 
     # Relax the tests to deal with test files that have a '\n' line break
-    # (Linux flavor) which does not match the pandoc line break on Windows 
+    # (Linux flavor) which does not match the pandoc line break on Windows
     # (Windows flavor : '\r\n').
-    # The proper way to deal with this would be to convert the test files 
+    # The proper way to deal with this would be to convert the test files
     # beforehand on Windows.
-    if platform.system() == "Windows": 
+    if platform.system() == "Windows":
         options["optionflags"] = doctest.NORMALIZE_WHITESPACE
 
     _fails, _tests = doctest.testfile(filename, **options)
