@@ -1,102 +1,319 @@
-
 # Cookbook
 
-⚠️ Random notes & TODOs.
-
 ``` python
+# Python Standard Library
+import builtins
+import copy
+
+# Pandoc
 import pandoc
 from pandoc.types import *
 ```
 
-## Fetch
+In this cookbook, we will use as reference the very simple "Hello world!" document
 
-### Read
+``` python
+HELLOWORLD_DOC = pandoc.read("Hello world!")
+```
 
-Extraction of information from a document – a very common use case in
-the automatic processing of documents – requires usually to find the
-document fragments that meet some condition first and foremost. 
-This condition typically discriminates on the type of the fragment 
-and optionally its contents. This "fetch" pattern, 
-does not require any transformation of the document itself,
-often leads to rather straightforward implementations.
+and the longer and more complex commonmark spec:
 
-We'll present some examples of this pattern based on the commonmark spec, 
-which is a rather rich markdown document. It is available on github:
 ``` python
 from urllib.request import urlopen
 PATH = "raw.githubusercontent.com/commonmark/commonmark-spec"
-HASH = "499ebbad90163881f51498c4c620652d0c66fb2e" 
+HASH = "499ebbad90163881f51498c4c620652d0c66fb2e" # pinned version
 URL = f"https://{PATH}/{HASH}/spec.txt"
 COMMONMARK_SPEC = urlopen(URL).read().decode("utf-8")
 ```
 
-We read it as a pandoc document:
-```python
-commonmark_doc = pandoc.read(COMMONMARK_SPEC)
+``` pycon
+>>> print(COMMONMARK_SPEC[:583]) # excerpt
+---
+title: CommonMark Spec
+author: John MacFarlane
+version: '0.30'
+date: '2021-06-19'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+<BLANKLINE>
+# Introduction
+<BLANKLINE>
+## What is Markdown?
+<BLANKLINE>
+Markdown is a plain text format for writing structured documents,
+based on conventions for indicating formatting in email
+and usenet posts.  It was developed by John Gruber (with
+help from Aaron Swartz) and released in 2004 in the form of a
+[syntax description](http://daringfireball.net/projects/markdown/syntax)
+and a Perl script (`Markdown.pl`) for converting Markdown to
+HTML.
 ```
 
-We can find the document's author name in the document metadata[^11]:
 ``` python
-def author(doc):
-    metas = [elt for elt in pandoc.iter(doc) if isinstance(elt, Meta)]
-    assert len(metas) == 1
-    meta = metas[0]
-    metamap = meta[0] # Meta signature is Meta({Text: MetaValue})
-    author = metamap["author"]
-    assert isinstance(author, MetaInlines)
-    inlines = author[0] # MetaInlines signature: MetaInlines([Inline])
-    author_doc = Pandoc(Meta({}), [Plain(inlines)])
-    author_md = pandoc.write(author_doc).strip()
-    return author_md
+COMMONMARK_DOC = pandoc.read(COMMONMARK_SPEC)
+```
+
+## Access
+
+When we know the location and type of some information in a document,
+we can use either random access or pattern matching to retrieve it.
+
+### Random access
+
+A date is often included as inline text into a document's metadata; 
+in this case, we can access it and return it as a markdown string:
+
+``` python
+def get_date(doc):
+    meta = doc[0] # doc: Pandoc(Meta, [Block])
+    meta_dict = meta[0] # meta: Meta({Text: MetaValue})
+    date = meta_dict["date"]
+    date_inlines = date[0] # date: MetaInlines([Inline])
+    return pandoc.write(date_inlines).strip()
+```
+
+The commonmark specification includes such a date:
+``` pycon
+>>> print(COMMONMARK_SPEC) # doctest: +ELLIPSIS
+---
+title: CommonMark Spec
+author: John MacFarlane
+version: '0.30'
+date: '2021-06-19'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+```
+
+and therefore
+
+``` pycon
+>>> get_date(COMMONMARK_DOC)
+'2021-06-19'
+```
+
+After the metadata, the document starts with a header.
+To get its title, we can use
+
+``` python
+def get_first_header_title(doc):
+    blocks = doc[1] # doc: Pandoc(Meta, [Block])
+    header = blocks[0]
+    title_inlines = header[2] # header: Header(Int, Attr, [Inline])
+    return pandoc.write(title_inlines).strip()
 ```
 
 ``` pycon
->>> author(commonmark_doc)
+>>> get_first_header_title(COMMONMARK_DOC)
+'Introduction'
+```
+
+### Structural checks
+
+The functions `get_date` and `get_first_header_title` may fail if they are
+use on a document which doesn't have the expected structure. 
+For example, for the "Hello world!" document
+
+``` pycon
+>>> HELLOWORLD_DOC
+Pandoc(Meta({}), [Para([Str('Hello'), Space(), Str('world!')])])
+```
+
+which has no `date` metadata field, and doesn't start with a header,
+we end up with
+
+``` pycon
+>>> get_date(HELLOWORLD_DOC)
+Traceback (most recent call last):
+...
+KeyError: 'date'
+```
+
+``` pycon
+>>> get_first_header_title(HELLOWORLD_DOC)
+Traceback (most recent call last):
+...
+IndexError: list index out of range
+```
+
+A more robust version of these functions may return `None` when
+the document does not have the expected structure:
+
+``` python
+def get_date(doc):
+    meta = doc[0] # doc: Pandoc(Meta, [Block])
+    meta_dict = meta[0] # meta: Meta({Text: MetaValue})
+    date = meta_dict.get("date")
+    if isinstance(date, MetaInlines):
+        date_inlines = date[0] # date: MetaInlines([Inline])
+        return pandoc.write(date_inlines).strip()
+```
+
+``` pycon
+>>> get_date(COMMONMARK_DOC)
+'2021-06-19'
+>>> get_date(HELLOWORLD_DOC)
+```
+
+``` python
+def get_first_header_title(doc):
+    blocks = doc[1] # doc: Pandoc(Meta, [Block])
+    if blocks and isinstance(blocks[0], Header):
+        header = blocks[0]
+        title_inlines = header[2] # header: Header(Int, Attr, [Inline])
+        return pandoc.write(title_inlines).strip()
+```
+
+``` pycon
+>>> get_first_header_title(COMMONMARK_DOC)
+'Introduction'
+>>> get_first_header_title(HELLOWORLD_DOC)
+```
+
+<!--
+We can also find the document's author name in the document metadata and 
+return it (as a markdown string).
+``` python
+def get_author(doc):
+    meta = doc[0] # doc: Pandoc(Meta, [Block])
+    meta_dict = meta[0] # meta: Meta({Text: MetaValue})
+    author = meta_dict.get("author")
+    if author:
+        if isinstance(author, MetaInlines): # author: MetaInlines([Inline])
+            author_inlines = author[0]
+            return pandoc.write(author_inlines).strip()
+        elif isinstance(author, MetaList): # author: MetaList([MetaValue])
+            authors_meta = author[0]
+            if all(isinstance(elt, MetaInlines) for elt in authors_meta):
+                authors_inlines = [elt[0] for elt in authors_meta]
+                return [pandoc.write(inline).strip() for inline in authors_inlines]
+```
+
+``` pycon
+>>> get_author(COMMONMARK_DOC)
 'John MacFarlane'
 ```
 
-[^11]: using a pointlessly complicated method since the metadata is available
-as `doc[0]`.
+This `get_author` function is more complex than `get_date` but it can also 
+deal with multiple authors, specified as a list of inline texts. For example,
+with
 
-We can build the table of contents of the document:
+``` python
+doc = pandoc.read("""
+---
+author: 
+  - Author 1
+  - Author 2
+  - Author 3
+---
+""")
+```
+it yields
+``` pycon
+>>> get_author(doc)
+['Author 1', 'Author 2', 'Author 3']
+```
+
+-->
+
+### Pattern matching
+
+With Python 3.10 or later, [pattern matching] can be used to combine
+random access and structural checks. The following implementation of `get_date`
+
+``` python
+def get_date(doc):
+    match doc:
+        case Pandoc(Meta({"date": MetaInlines(date_inlines)}), _):
+            return pandoc.write(date_inlines).strip()
+```
+
+and the previous one have identical behaviors:
+
+``` pycon
+>>> get_date(COMMONMARK_DOC)
+'2021-06-19'
+>>> get_date(HELLOWORLD_DOC)
+```
+
+The behavior of the following `get_first_header_title` function
+
+``` python
+def get_first_header_title(doc):
+    match doc:
+        case Pandoc(_, [Header(_, _, header_inlines), *_]):
+            return pandoc.write(header_inlines).strip()
+```
+
+is also unchanged:
+
+``` pycon
+>>> get_first_header_title(COMMONMARK_DOC)
+'Introduction'
+>>> get_first_header_title(HELLOWORLD_DOC)
+```
+
+[pattern matching]: https://www.python.org/dev/peps/pep-0634/
+
+## Find
+
+When the items we are searching for are not in a known place in
+the document, we may use the tree iterator provided by `pandoc.iter`
+and a variety of filtering methods to fetch them. Here we focus on
+comprehensions first and then introduce a higher-level helper.
+
+### Filter
+
+The pattern to use is `[elt for elt in pandoc.iter(root) if condition_is_met(elt)]`.
+
+With it, we can build a simple table of contents of the document:
 ``` python
 def table_of_contents(doc):
     headers = [elt for elt in pandoc.iter(doc) if isinstance(elt, Header)]
     toc_lines = []
     for header in headers:
-       level, _, inlines = header[:] # Header signature: Header(Int, Attr, [Inline]) 
-       header_title = pandoc.write(Pandoc(Meta({}), [Plain(inlines)])).strip()
-       toc_lines.append( (level - 1) * 2 * " " + header_title)
+       level, _, inlines = header[:] # header: Header(Int, Attr, [Inline]) 
+       header_title = pandoc.write(inlines).strip()
+       indent = (level - 1) * 4 * " "
+       toc_lines.append(f"{indent}  - {header_title}")
     return "\n".join(toc_lines)
 ```
 
 ``` pycon
->>> print(table_of_contents(commonmark_doc)) # doctest: +ELLIPSIS
-Introduction
-  What is Markdown?
-  Why is a spec needed?
-  About this document
-Preliminaries
-  Characters and lines
-  Tabs
-  Insecure characters
+>>> print(table_of_contents(COMMONMARK_DOC)) # doctest: +ELLIPSIS
+  - Introduction
+      - What is Markdown?
+      - Why is a spec needed?
+      - About this document
+  - Preliminaries
+      - Characters and lines
+      - Tabs
+      - Insecure characters
+      - Backslash escapes
+      - Entity and numeric character references
   ...
+  - Appendix: A parsing strategy
+      - Overview
+      - Phase 1: block structure
+      - Phase 2: inline structure
+          - An algorithm for parsing nested emphasis and links
+              - *look for link or image*
+              - *process emphasis*
 ```
 
-We can display all external link URLs used in the commonmark specification.
+We can display all external link URLs used in the commonmark specification:
 
 ``` python
 def display_external_links(doc):
     links = [elt for elt in pandoc.iter(doc) if isinstance(elt, Link)]
     for link in links:
-        _, _, target = link # Link signature is Link(Attr, [Inline], Target)
-        url, title = target # Target signature is (Text, Text)
-        if url.startswith("http"):
+        target = link[2] # link: Link(Attr, [Inline], Target)
+        url = target[0] # target: (Text, Text)
+        if url.startswith("http:") or url.startswith("https:"):
             print(url)
 ```
 
 ``` pycon
->>> display_external_links(commonmark_doc)
+>>> display_external_links(COMMONMARK_DOC)
 http://creativecommons.org/licenses/by-sa/4.0/
 http://daringfireball.net/projects/markdown/syntax
 http://daringfireball.net/projects/markdown/
@@ -114,7 +331,8 @@ https://html.spec.whatwg.org/multipage/forms.html#e-mail-state-(type=email)
 http://www.w3.org/TR/html5/syntax.html#comments
 ```
 
-We can get the list of the code blocks types (registered as classes):
+We can get the list of all code blocks and collect their types 
+(registered as code block classes):
 
 ``` python
 def fetch_code_types(doc):
@@ -128,24 +346,26 @@ def fetch_code_types(doc):
 ```
 
 ``` pycon
->>> code_types = fetch_code_types(commonmark_doc)
+>>> code_types = fetch_code_types(COMMONMARK_DOC)
 >>> code_types
 ['example', 'html', 'markdown', 'tree']
 
 ```
 
+<!--
 ### Write
 
-The "fetch" pattern is also valuable to get a list of (mutable) items and then 
-change their content. For example, to change all http links in the document to 
-their https counterpart:
+The "find" pattern can also be used to change the content of a document,
+as long as the items that are searched for are mutable.
+For example, to change all http links in the document to their https 
+counterpart:
 
 ``` python
 def to_https(doc):
     links = [elt for elt in pandoc.iter(doc) if isinstance(elt, Link)]
     for link in links:
-        target = link[2]    # Link signature is Link(Attr, [Inline], Target)
-        url, title = target # Target signature is (Text, Text)
+        target = link[2] # link: Link(Attr, [Inline], Target)
+        url, title = target # target: (Text, Text)
         if url.startswith("http:"):
             url = url.replace("http:", "https:")
             target = url, title
@@ -155,6 +375,7 @@ def to_https(doc):
 We can check that this function performs the expected change in the document:
 
 ``` pycon
+>>> commonmark_doc = copy.deepcopy(COMMONMARK_DOC)
 >>> to_https(commonmark_doc)
 >>> display_external_links(commonmark_doc)
 https://creativecommons.org/licenses/by-sa/4.0/
@@ -174,22 +395,237 @@ https://html.spec.whatwg.org/multipage/forms.html#e-mail-state-(type=email)
 https://www.w3.org/TR/html5/syntax.html#comments
 ```
 
+-->
+
+
+### Exclude
+
+Some search patterns require to exclude some elements when one of their 
+ancestors meets some condition. For example, you may want to count the number 
+of words in your document (loosely defined as the number of `Str` instances)
+excluding those inside a div tagged as notes[^reveal].
+
+[^reveal]: such divs are used to include speaker notes into reveal.js presentations.
+
+Let's use the following example document:
+
+``` python
+words_doc = pandoc.read("""
+The words in this paragraph should be counted.
+
+::: notes ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+But these words should be excluded.
+
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+""")
+```
+
+Counting all words is easy
+
+``` pycon
+>>> len([item for item in pandoc.iter(words_doc) if isinstance(item, Str)])
+14
+```
+
+But to exclude all words with a `notes` div, we need to detect when the iteration
+enters and exits such an element. The easiest way to do this is to record the
+depth of the div when we enter it. As long as we iterate on items
+at a greater depth, we're still in the div scope ; when this depth becomes
+equal or smaller than this recorded depth, we're out of it. 
+Thus, we can implement this pattern with:
+
+``` python
+def is_notes(elt):
+    if isinstance(elt, Div):
+        attr = elt[0] # elt: Div(Attr, [Block])
+        classes = attr[1] # attr :(Text, [Text], [(Text, Text)])
+        return "notes" in classes
+    else:
+        return False
+
+def count_words(doc):
+    in_notes, depth = False, None
+    count = 0
+    for elt, path in pandoc.iter(doc, path=True):
+        if in_notes and len(path) > depth:
+            pass
+        elif is_notes(elt):
+            in_notes, depth = True, len(path)
+        else:
+            in_notes, depth = False, None
+            if isinstance(elt, Str) and not in_notes:
+                count += 1
+    return count
+```
+
+
+It provides the expected result:
+``` pycon
+>>> count_words(words_doc)
+8
+```
+
+### Finder
+
+If your code ends up being hard to read, it's not hard to wrap the more
+common search patterns into a `find` helper function, for example:
+
+``` python
+def is_type_or_types(item):
+    return isinstance(item, type) or (
+        isinstance(item, tuple) and all(isinstance(x, type) for x in item)
+    )
+
+def to_function(condition):
+    if is_type_or_types(condition):
+        return lambda elt: isinstance(elt, condition)
+    elif callable(condition):
+        return condition
+    else:
+        error = "condition should be a type, tuple of types or function"
+        error += f", not {condition}"
+        raise TypeError(error)
+
+def find(root, condition, all=False):
+    condition = to_function(condition)
+    elts = (elt for elt in pandoc.iter(root) if condition(elt))
+    if all:
+        return list(elts)
+    else:
+        try:
+            return next(elts)
+        except StopIteration:
+            return None
+```
+
+This `find` helper returns the first elt that matches the specified condition,
+or returns `None` if the condition was never met:
+
+``` pycon
+>>> find(HELLOWORLD_DOC, Meta)
+Meta({})
+>>> find(HELLOWORLD_DOC, Para)
+Para([Str('Hello'), Space(), Str('world!')])
+>>> find(HELLOWORLD_DOC, Str)
+Str('Hello')
+>>> find(HELLOWORLD_DOC, LineBreak)
+```
+
+With `all=True`, the list of all matching elements are returned instead:
+
+``` pycon
+>>> find(HELLOWORLD_DOC, Meta, all=True)
+[Meta({})]
+>>> find(HELLOWORLD_DOC, Para, all=True)
+[Para([Str('Hello'), Space(), Str('world!')])]
+>>> find(HELLOWORLD_DOC, Str, all=True)
+[Str('Hello'), Str('world!')]
+>>> find(HELLOWORLD_DOC, LineBreak, all=True)
+[]
+```
+
+Types or multiple types can be specified (this is similar to what `isinstance`
+does):
+
+``` pycon
+>>> find(HELLOWORLD_DOC, (Str, Space))
+Str('Hello')
+>>> find(HELLOWORLD_DOC, (Str, Space), all=True)
+[Str('Hello'), Space(), Str('world!')]
+```
+
+Complex conditions based on types and values can be factored out in 
+a predicate function, such as `is_http_or_https_link`:
+
+``` python
+def get_url(link):
+    target = link[2] # link: Link(Attr, [Inline], Target)
+    url = target[0] # target: (Text, Text)
+    return url
+
+def is_http_or_https_link(elt):
+    if isinstance(elt, Link):
+        url = get_url(link=elt)
+        return url.startswith("http:") or url.startswith("https:")
+    else:
+        return False
+```
+
+``` pycon
+>>> for link in find(COMMONMARK_DOC, is_http_or_https_link, all=True):
+...     print(get_url(link))
+http://creativecommons.org/licenses/by-sa/4.0/
+http://daringfireball.net/projects/markdown/syntax
+http://daringfireball.net/projects/markdown/
+http://www.methods.co.nz/asciidoc/
+http://daringfireball.net/projects/markdown/syntax
+http://article.gmane.org/gmane.text.markdown.general/1997
+http://article.gmane.org/gmane.text.markdown.general/2146
+http://article.gmane.org/gmane.text.markdown.general/2554
+https://html.spec.whatwg.org/entities.json
+http://www.aaronsw.com/2002/atx/atx.py
+http://docutils.sourceforge.net/rst.html
+http://daringfireball.net/projects/markdown/syntax#em
+http://www.vfmd.org/vfmd-spec/specification/#procedure-for-identifying-emphasis-tags
+https://html.spec.whatwg.org/multipage/forms.html#e-mail-state-(type=email)
+http://www.w3.org/TR/html5/syntax.html#comments
+```
+
+We can improve `find` to make it support the exclusion pattern:
+
+``` python
+def find(root, condition, exclude=None, all=False):
+    condition = to_function(condition)
+    exclude = exclude or (lambda elt: False)
+    def generator():
+        is_excluded, depth = False, None
+        for elt, path in pandoc.iter(root, path=True):
+            if is_excluded and len(path) > depth:
+                pass
+            elif exclude(elt):
+                is_excluded, depth = True, len(path)
+            else:
+                is_excluded, depth = False, None
+                if condition(elt):
+                    yield elt
+    if all:
+        return list(generator())
+    else:
+        try:
+            return next(generator())
+        except StopIteration:
+            return None
+```
+
+We can then count again the words in the `words_doc` document:
+
+``` pycon
+>>> len(find(words_doc, Str, all=True))
+14
+>>> len(find(words_doc, Str, exclude=is_notes, all=True))
+8
+```
+
 ## Locate
 
-Another very common transformation pattern is when you need to locate the
-items meeting some condition in the document in order to replace them or 
-to delete them. In this case, fetching a list of items is not enough;
-instead we should obtain the location of the item in the document,
-which is given as a pair of item `holder` and item `index`, such that
-`item` is `holder[index]`.
+We sometimes need to find some elements meeting some condition *and* to know
+at the same times *where* they are in the document hierarchy.
 
-This information is avaible as `path[-1]` where `elt, path` is yielded by
-`pandoc.iter` with the option `path=True`. For example:
+### Holder and index
+
+A way to locate an element `elt` is to provide the unique pair `holder`, `index` 
+such that `elt` is `holder[index]`[^except].
+To get this information during a depth-first iteration of `root`, we
+iterate on `pandoc.iter(root, path=True)`: the iteration then yields `elt, path` 
+and `holder, index` is the last item of `path`. For example:
+
+[^except]: or `elt` is `list(holder.items())[index]` if `holder` is a dict.
 
 ``` pycon
 >>> doc = pandoc.read("Hello world!")
 >>> for elt, path in pandoc.iter(doc, path=True):
-...     if elt != doc: # elt == doc is the document root, it has no holder
+...     if elt != doc: # when doc is the root, path == []
 ...          holder, index = path[-1]
 ...          print(f"elt: {elt!r}")
 ...          print(f"  -> holder: {holder}")
@@ -240,117 +676,150 @@ the element holder, then their holder and index, etc. up to the document root:
 -> Str('world!')[0]
 ```
 
-### Replace
+### Transforms
 
-"Find-and-replace" is a very frequent pattern in document transformations.
-In most use cases, the implementation is straightforward ; but some others
-require a bit more subtelty.
-
-**TODO.** Don't change while you iterate.
-
-For example, to replace all instances of emphasized text with strong text,
-you first need locate emphasized text instances, that is find the collections
-of holders `holder` and indices `i` such that `emph = holder[i]`.
+The location (`holder`, `index` pair) of elements is a must-have for many 
+(in-place) document transforms. We demonstrate in this section several
+typical use of this information on the document
 
 ``` python
-doc = pandoc.read("""
-# Title with *emphasis*
-Text with *emphasis*.
-""")
-```
-
-``` python
-emph_locations = []
-for elt, path in pandoc.iter(doc, path=True):
-    if isinstance(elt, Emph):
-        holder, i = path[-1]
-        emph_locations.append((holder, i))
+doc = pandoc.read("🏠, sweet 🏠.")
 ```
 
 ``` pycon
->>> for holder, i in emph_locations:
-...    emph = holder[i] 
-...    inlines = emph[0]        # Emph signature is Emph([Inline])
-...    strong = Strong(inlines) # Strong signature is Strong([Inline])
-...    holder[i] = strong
+>>> doc
+Pandoc(Meta({}), [Para([Str('🏠,'), Space(), Str('sweet'), Space(), Str('🏠.')])])
 ```
 
-**Question.** When is the "not-reversed-scheme" ok? When are the next locations
-still valid? Even with most recursive scheme, that should be ok. Think more of
-it here & document the stuff. Distinguish simple replacement with "extensive
-surgery" that may invalidate the inner locations. Talk about (shallow) replacement?
+#### Expand
 
-### Delete
-
-**TODO.**
-
-## Scoping
-
-Some patterns require to treat elements differently when one of their ancestors
-meet some condition. For example, to count the number of words in your document
-(defined as the number of `Str` instances), excluding those inside a `notes` div 
-(a way to inside speaker notes when reveal.js presentations are the target).
-
-Let's use the following example document:
+To easily locate the 🏠 symbol in the subsequent steps, 
+we expand every instance of `Str` where it appears.
+First, we define the helper function `split_home`
 
 ``` python
-doc = pandoc.read("""
-The words in this paragraph should be counted.
-
-::: notes ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-
-But these words should be excluded.
-
-::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-""")
+def split_home(string):
+    text = string[0] # string: Str(text)
+    texts = [t for t in text.split("🏠")]
+    parts = []
+    for text in texts:
+        parts.extend([Str(text), Str("🏠")])
+    parts = parts[:-1] # remove trailing Str("🏠")
+    return [elt for elt in parts if elt != Str("")]
 ```
-
-Counting all words is easy
 
 ``` pycon
->>> len([item for item in pandoc.iter(doc) if isinstance(item, Str)])
-14
+>>> split_home(Str("!🏠!"))
+[Str('!'), Str('🏠'), Str('!')]
 ```
 
-But to exclude all words with a `notes` div, we need to detect when the iteration
-enters and exits such an element. The easiest way to do this is to record the
-depth of such divs[^99] when we enter them. As long as we iterate on items
-at a greater depth, we're still in the div scope ; when this depth becomes
-equal or smaller than this recorded depth, we're out of it. 
-Thus, a possible implementation of this pattern is:
+then we use it to expand all `Str` inlines accordingly:
 
 ``` python
-def count_words(doc):
-    in_notes, depth = False, None
-    count = 0
-    for elt, path in pandoc.iter(doc, path=True):
-        # Detect entry & exit from notes div
-        if not in_notes:
-            if isinstance(elt, Div):
-                attr = elt[0]     # Div(Attr, [Block])
-                classes = attr[1] # attr = (id, classes, kvs)
-                if "notes" in classes:
-                    in_notes, depth = True, len(path) 
-        else:
-            if len(path) <= depth:
-                in_notes, depth = False, None
-        # Count words outside of notes divs
-        if isinstance(elt, Str) and not in_notes:
-            count += 1
-    return count
+matches = [
+    (elt, path) for (elt, path) in pandoc.iter(doc, path=True) 
+    if isinstance(elt, Str)
+]
+for elt, path in reversed(matches): # reversed: subsequent matches stay valid
+    holder, index = path[-1]
+    holder[index:index+1] = split_home(elt)
 ```
 
-It provides the expected result:
+This operation had no apparent impact when the document is converted to markdown
+
 ``` pycon
->>> count_words(doc)
-8
+>>> print(pandoc.write(doc).strip())
+🏠, sweet 🏠.
 ```
 
-[^99]: or the depths if they can be nested.
+but we can check that it has actually changed the document:
+ 
+``` pycon
+>>> doc
+Pandoc(Meta({}), [Para([Str('🏠'), Str(','), Space(), Str('sweet'), Space(), Str('🏠'), Str('.')])])
+```
+
+#### Replace
+
+We locate all locations of 🏠 in the text and wrap them into links.
+
+``` python
+matches = [
+    (elt, path) for (elt, path) in pandoc.iter(doc, path=True) 
+    if elt == Str("🏠")
+]
+for elt, path in reversed(matches):
+    holder, index = path[-1]
+    attr = ("", [], [])
+    target = ("https://github.com/boisgera/pandoc/", "")
+    holder[index] = Link(attr, [elt], target) 
+```
+
+``` pycon
+>>> print(pandoc.write(doc)) # doctest: +NORMALIZE_WHITESPACE
+[🏠](https://github.com/boisgera/pandoc/), sweet [🏠](https://github.com/boisgera/pandoc/).
+```
+
+``` pycon
+>>> doc
+Pandoc(Meta({}), [Para([Link(('', [], []), [Str('🏠')], ('https://github.com/boisgera/pandoc/', '')), Str(','), Space(), Str('sweet'), Space(), Link(('', [], []), [Str('🏠')], ('https://github.com/boisgera/pandoc/', '')), Str('.')])])
+```
+
+#### Insert
+
+We insert the text "home" just after the 🏠 symbols:
+
+``` python
+matches = [
+    (elt, path) for (elt, path) in pandoc.iter(doc, path=True) 
+    if elt == Str("🏠")
+]
+for elt, path in reversed(matches):
+    holder, index = path[-1]
+    attr = ("", [], [])
+    target = ("https://github.com/boisgera/pandoc/", "")
+    holder.insert(index + 1, Str("home"))
+```
+
+``` pycon
+>>> print(pandoc.write(doc)) # doctest: +NORMALIZE_WHITESPACE
+[🏠home](https://github.com/boisgera/pandoc/), sweet [🏠home](https://github.com/boisgera/pandoc/).
+```
+``` pycon
+>>> doc
+Pandoc(Meta({}), [Para([Link(('', [], []), [Str('🏠'), Str('home')], ('https://github.com/boisgera/pandoc/', '')), Str(','), Space(), Str('sweet'), Space(), Link(('', [], []), [Str('🏠'), Str('home')], ('https://github.com/boisgera/pandoc/', '')), Str('.')])])
+```
+
+#### Delete
+
+And finally, we get rid of the 🏠 symbols altogether.
+
+``` python
+matches = [
+    (elt, path) for (elt, path) in pandoc.iter(doc, path=True) 
+    if elt == Str("🏠")
+]
+for elt, path in reversed(matches):
+    holder, index = path[-1]
+    attr = ("", [], [])
+    target = ("https://github.com/boisgera/pandoc/", "")
+    del holder[index] 
+```
+
+``` pycon
+>>> print(pandoc.write(doc)) # doctest: +NORMALIZE_WHITESPACE
+[home](https://github.com/boisgera/pandoc/), sweet [home](https://github.com/boisgera/pandoc/).
+```
+
+``` pycon
+>>> doc
+Pandoc(Meta({}), [Para([Link(('', [], []), [Str('home')], ('https://github.com/boisgera/pandoc/', '')), Str(','), Space(), Str('sweet'), Space(), Link(('', [], []), [Str('home')], ('https://github.com/boisgera/pandoc/', '')), Str('.')])])
+```
+
 
 ## Immutable data
 
-Every non-trivial pandoc document contains data that is immutable.
+Every non-trivial pandoc document contains some data which is immutable.
 To perform in-place modifications of your document, 
 you have to deal with them specifically. And this is a good thing!
 
@@ -395,30 +864,31 @@ a custom Pandoc type, which is mutable.
 While the above approach may seem to be a workaround at first, 
 it is actually *a good thing*, because it helps you to carefully consider
 the type of data that you select and transform. Python strings for example
-are of course in documents to describe pieces of text, but also in many
+are of course in documents to describe fragments of text, but also in many
 other roles. 
 
 Consider the HTML fragment:
-``` pycon
->>> blocks = [ # <p>html rocks!</p>
-...     RawBlock(Format('html'), '<p>'), 
-...     Plain([Str('html'), Space(), Str('rocks!')]), 
-...     RawBlock(Format('html'), '</p>')
-... ]
+
+``` python
+blocks = [ # <p>html rocks!</p>
+    RawBlock(Format("html"), "<p>"), 
+    Plain([Str("html"), Space(), Str('rocks!')]), 
+    RawBlock(Format("html"), "<p/>")
+]
 ```
-Let's say that we want to replace `'html'` with `'pandoc'` in the document text.
-Notice that the string `'html'` is used in the `"html rocks!"`, 
+Let's say that we want to replace `"html"` with `"pandoc"` in the document text.
+Notice that the string `"html"` is used in the `"html rocks!"`, 
 but also as a type field in the `Format` instance. 
 If Python strings were mutable, you could carelessly try to replace all
-`'html'` strings in the document model regardless of their role. 
+`"html"` strings in the document model regardless of their role. 
 And you would end up with the (invalid) document fragment:
 
-``` pycon
->>> invalid_blocks = [
-...     RawBlock(Format('pandoc'), '<p>'), 
-...     Plain([Str('pandoc'), Space(), Str('rocks!')]),  
-...     RawBlock(Format('pandoc'), '</p>')
-... ]
+``` python
+invalid_blocks = [
+    RawBlock(Format("pandoc"), "<p>"), 
+    Plain([Str("pandoc"), Space(), Str('rocks!')]),  
+    RawBlock(Format("pandoc"), "<p/>")
+]
 ```
 
 Fortunately this approach will fail loudly:
@@ -440,9 +910,9 @@ A correct, type-safe, way to proceed is instead:
 ...         elt[0] = "pandoc"
 ... 
 >>> blocks == [
-...     RawBlock(Format('html'), '<p>'), 
-...     Plain([Str('pandoc'), Space(), Str('rocks!')]), 
-...     RawBlock(Format('html'), '</p>')
+...     RawBlock(Format("html"), "<p>"), 
+...     Plain([Str("pandoc"), Space(), Str('rocks!')]), 
+...     RawBlock(Format("html"), "<p/>")
 ... ]
 True
 ```
@@ -469,7 +939,7 @@ Target = (Text, Text)
 ```
 
 The first text represents an URL and the second a title.
-Targets are used in link and image elements and only there.
+Targets are used in link and image elements (and only there).
 
 Say that you want to find all links in your document whose target URL is
 `"https://pandoc.org"` and make sure that the associated title is 
@@ -499,7 +969,7 @@ pandoc's web site.
 >>> doc = pandoc.read("[Link to pandoc.org](https://pandoc.org)")
 >>> for elt in pandoc.iter(doc):
 ...     if isinstance(elt, Link):
-...         attr, inlines, target = elt[:]
+...         attr, inlines, target = elt[:] # elt: Link(Attr, [Inline], Target)
 ...         if target[0] == "https://pandoc.org":
 ...             new_target = (target[0], "Pandoc - About pandoc")
 ...             elt[2] = new_target
@@ -519,7 +989,7 @@ Attr = (Text, [Text], [(Text, Text)])
 
 `Attr` is composed of an identifier, a list of classes, and a list of
 key-value pairs. To transform `Attr` content, again the easiest way to
-proceed is to target their holders. Say that we want add a class tag 
+proceed is to target their holders. Say that we want to add a class tag 
 that described the type of the pandoc element for every element which 
 is a `Attr` holder. 
 The relevant type signatures – we display all `Attr` holders – are:
@@ -609,32 +1079,3 @@ and this transformation would result in:
 # Pandoc {#pandoc .header}
 [Link to pandoc.org](https://pandoc.org){#anonymous .link}
 ```
-
-
-## TODO: Move fragments
-
-(example: move some fragments to some annex)
-
-## Deletion
-
-**TODO.** start with a problem (either plain error or deletions that did no
-go as expected?)
-
-Deletion is conceptually similar to replacement, but a deletion may invalidate 
-the next location that you are willing to delete. Give a simple example and
-step by step what would happen if we were to delete the items in document 
-order?
-
-Merge with "complex replacement"? Or **before**, yes, more common use case.
-
-**TODO.** deal with immutable content? There are a limited number of use cases
-here: Attr, Target, Colspec, ListAttributes, that's all. Start with the
-list of such stuff ? Or even focus with Attr or Target (mutation or deletion).
-For `Target`, this is easy, the only parents are images or links ; `Attr` is 
-much more pervasive.
-
-## Transform (more extensively)
-
-### TODO. two-pass find / replace in reverse-order pattern.
-
-## TODO. functional style (copy / recreate, not in-place)

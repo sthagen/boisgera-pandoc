@@ -1,26 +1,32 @@
 
-Pandoc (Python Library)
+Pandoc – 🐍 Python Library
 ================================================================================
 
-[![build](https://github.com/boisgera/pandoc/actions/workflows/build.yml/badge.svg)](https://github.com/boisgera/pandoc/actions/workflows/build.yml)
+![Python](https://img.shields.io/pypi/pyversions/pandoc.svg)
+[![PyPI version](https://img.shields.io/pypi/v/pandoc.svg)](https://pypi.python.org/pypi/pandoc)
+[![Mkdocs](https://img.shields.io/badge/doc-mkdocs-845ed7.svg)](https://boisgera.github.io/pandoc)
+[![GitHub discussions](https://img.shields.io/badge/discuss-online-845ef7)](https://github.com/boisgera/pandoc/discussions)
 [![Downloads](https://pepy.tech/badge/pandoc)](https://pepy.tech/project/pandoc)
-[![Gitter chat](https://badges.gitter.im/boisgera/python-pandoc.svg)](https://gitter.im/python-pandoc/community#)
+[![GitHub stars](https://img.shields.io/github/stars/boisgera/pandoc?style=flat)](https://github.com/boisgera/pandoc/stargazers)
+[![build](https://github.com/boisgera/pandoc/actions/workflows/build.yml/badge.svg)](https://github.com/boisgera/pandoc/actions/workflows/build.yml)
 
-*This README is about the 2.x branch of the library (alpha stage!). Only the 1.x branch is available on PyPi at the moment.*
 
-Getting started
+🚀 Getting started
 --------------------------------------------------------------------------------
 
-Install the latest version with:
-
-    $ pip install --upgrade git+https://github.com/boisgera/pandoc.git
-
-The [Pandoc] command-line tool is a also required dependency ;
-you may install it with :
+[Pandoc] – the general markup converter (and Haskell library) written by 
+[John MacFarlane] – needs to be available. 
+You may follow the official [installation instructions][pandoc-install] 
+or use [conda]:
 
     $ conda install -c conda-forge pandoc
 
-Overview 
+Then, install the latest stable version of the pandoc Python library with pip:
+
+    $ pip install --upgrade pandoc
+
+
+🌌 Overview 
 --------------------------------------------------------------------------------
 
 This project brings [Pandoc]'s data model for markdown documents to Python:
@@ -45,11 +51,14 @@ It can be used to analyze, create and transform documents, in Python :
     >>> print(text)
     Hello Python!
 
-[Pandoc] is the general markup converter (and Haskell library) written by [John MacFarlane].
+For more information, refer to the  [📖 documentation][doc].
 
 
-[Pandoc]: http://pandoc.org/
-[John MacFarlane]: http://johnmacfarlane.net/
+[Pandoc]: https://pandoc.org/
+[John MacFarlane]: https://johnmacfarlane.net/
+[pandoc-install]: https://pandoc.org/installing.html
+[conda]: https://docs.conda.io
 [Haskell]: https://www.haskell.org/
 [Python]: https://www.python.org/
 [TPD]: https://hackage.haskell.org/package/pandoc-types-1.20/docs/Text-Pandoc-Definition.html
+[doc]: https://boisgera.github.io/pandoc

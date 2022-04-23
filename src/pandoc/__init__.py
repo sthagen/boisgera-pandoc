@@ -4,10 +4,9 @@
 import argparse
 import collections
 import copy
-import inspect
 import json
 import os.path
-import shlex
+import pathlib
 import shutil
 import sys
 import time
@@ -20,16 +19,10 @@ import plumbum
 import pandoc.about
 from . import utils
 
-# TODO
-# ------------------------------------------------------------------------------
-#
-#   - Add pandoc options to the CLI (use shlex or partial parsing in argparse ?)
-#
-
 # Filesystem Helper
 # ------------------------------------------------------------------------------
 def rmtree(path):
-    """Deal with Windows 
+    """Deal with Windows
     (see e.g <https://www.gitmemory.com/issue/sdispater/poetry/1031/488759621>
     """
     retries = 10
@@ -56,7 +49,7 @@ def import_types():
 
 
 def configure(
-    auto=None,
+    auto=False,
     path=None,
     version=None,
     pandoc_types_version=None,
@@ -66,7 +59,7 @@ def configure(
     global _configuration
 
     default = (
-        auto is None
+        auto is False
         and path is None
         and version is None
         and pandoc_types_version is None
@@ -83,7 +76,7 @@ def configure(
 
     read_only = (
         read
-        and auto is None
+        and auto is False
         and path is None
         and version is None
         and pandoc_types_version is None
@@ -155,104 +148,6 @@ def configure(
 
 # JSON Reader / Writer
 # ------------------------------------------------------------------------------
-
-# Break compat? Read consumes markdown only? Bump major version number then.
-# Yay, worth it.
-#
-# TODO: optional input or output FILES or FILENAMES in read/write? Dunno.
-#       Think about it. The NAMES read and write seem to imply it ...
-#       But the filesystem stuff is orthogonal really ...
-#       However, for a ".doc" output for example, writing it as a string
-#       is *probably* useless.
-#
-# TODO: Study also the str vs bytes stuff: we don't want encoding stuff
-#       mixed in when we produce a word document, just BYTES.
-#       For Markdown OTOH, unicode repr is the right abstraction.
-#       What to do for latex, html docs? Bytes or Unicode?
-#       FYI, Pandoc is using DECLARING utf-8 encoding for both in standalone
-#       mode, so if you write these standalone outputs, you SHALL use utf-8 ...
-#       Otherwise, well, I don't know ... but it's pretty much the same for
-#       markdown: to get it properly processed, pandoc REQUIRES utf-8.
-#       So, distinguish, markdown, latex and html as "source formats" and
-#       use unicode for them? And bytes for the others?
-#       What is the list? There is also ReST? How to get it automatically?
-#       Try to trap the error? (Assuming the error message are stable?)
-#       Nota: from the pandoc source code, ATM, "non-text formats" are
-#        ["odt","docx","epub2","epub3","epub","pptx"]
-#       But the non-text format categorization is used for OUTPUTS only,
-#       what about inputs? OK, there is a classification into StringReader
-#       (text sources) and ByteStringReader. For the latter, piping is not
-#       accepted. So where is the list of the types of readers?
-#       Grepping the sources leads to "docx", "odt" and "epub". OK then.
-#       Am I really willing to hardcode all this stuff, or shall I return
-#       bytes and let the user decide what to do with it? For INPUTS,
-#       I can still accept unicode and convert to utf-8 seemlessly, the
-#       question is: what to do for outputs? Only return unicode for markdown?
-#       (that has no encoding metadata)? Dunno ...
-#       UPDATE: OK, I have configured plumbum to always use utf-8 when
-#       there is some conversion to be made between unicode and bytes.
-#       BUT how can I deal with stuff (in or out) that are BYTES that
-#       may not be utf-8 stuff?
-#       Also, I forgot to configure cat for utf-8 ... and is cat available
-#       on windows? Use temp files instead, that will solve two issues at
-#       the same time (bytes as input and car availability).
-#       Arf for the output, this is funny: for docx for example,
-#       pandoc (haskell) WONT LET ME USE STDOUT! Which is nice :)
-#       Nota: it won't read it either; so basically it manages differently
-#       the binary formats. Same thing for epub for examples.
-#       The messages are typically "pandoc: Cannot read archive from stdin"
-#       and "Specify an output file using the -o option".
-#       So I have to find a list in pandoc of binary vs text/utf-8 formats.
-#       OR detect the appropriate error at runtime?
-#       And then the bytes vs unicode policy is clear.
-#       And I don't need to tweak encoding settings in plumbum since I
-#       will use files for input and output anyway.
-#
-#       OK, so it's probaly safe to consider a shortlist of "binary" formats
-#       that are "doc*", "epub*", "ppt*", "odt" and to return bytes only
-#       for these formats.
-#
-#       And yes, working directly with filenames/files should work out
-#       of the box, and yes, NOT using files should be ok too (and is
-#       still my preferences: it should be simpler; if you need files,
-#       use a proper keyword argument).
-
-# TODO: add ".py" / Python support
-
-_readers = {
-    ".xhtml": "html",
-    ".html": "html",
-    ".htm": "html",
-    ".md": "markdown",
-    ".markdown": "markdown",
-    ".muse": "muse",
-    ".tex": "latex",
-    ".latex": "latex",
-    ".ltx": "latex",
-    ".rst": "rst",
-    ".org": "org",
-    ".lhs": "markdown+lhs",
-    ".db": "docbook",
-    ".opml": "opml",
-    ".wiki": "mediawiki",
-    ".dokuwiki": "dokuwiki",
-    ".textile": "textile",
-    ".native": "native",
-    ".json": "json",
-    ".docx": "docx",
-    ".t2t": "t2t",
-    ".epub": "epub",
-    ".odt": "odt",
-    ".pdf": "pdf",
-    ".doc": "doc",
-}
-
-
-def default_reader_name(filename):
-    _, ext = os.path.splitext(filename)
-    return _readers.get(ext)
-
-
 def read(source=None, file=None, format=None, options=None):
     if configure(read=True) is None:
         configure(auto=True)
@@ -280,7 +175,7 @@ def read(source=None, file=None, format=None, options=None):
     input.close()
 
     if format is None and filename is not None:
-        format = default_reader_name(filename)
+        format = format_from_filename(filename)
     if format is None:
         format = "markdown"
     if format != "json" and _configuration["path"] is None:
@@ -311,59 +206,67 @@ def read(source=None, file=None, format=None, options=None):
         return read_json_v2(json_)
 
 
-# TODO: add ".py" / Python support
-
-_writers = {
-    "": "markdown",
-    ".pdf": "latex",
-    ".tex": "latex",
-    ".latex": "latex",
-    ".ltx": "latex",
+# ------------------------------------------------------------------------------
+_ext_to_file_format = {
+    ".adoc": "asciidoc",
+    ".asciidoc": "asciidoc",
     ".context": "context",
     ".ctx": "context",
-    ".rtf": "rtf",
-    ".rst": "rst",
-    ".s5": "s5",
-    ".native": "native",
+    ".db": "docbook",
+    ".doc": "doc",  # pandoc will generate an "unknown reader"
+    ".docx": "docx",
+    ".dokuwiki": "dokuwiki",
+    ".epub": "epub",
+    ".fb2": "fb2",
+    ".htm": "html",
+    ".html": "html",
+    ".icml": "icml",
     ".json": "json",
-    ".txt": "markdown",
-    ".text": "markdown",
-    ".md": "markdown",
-    ".muse": "muse",
-    ".markdown": "markdown",
-    ".textile": "textile",
+    ".latex": "latex",
     ".lhs": "markdown+lhs",
+    ".ltx": "latex",
+    ".markdown": "markdown",
+    ".mkdn": "markdown",
+    ".mkd": "markdown",
+    ".mdwn": "markdown",
+    ".mdown": "markdown",
+    ".Rmd": "markdown",
+    ".md": "markdown",
+    ".ms": "ms",
+    ".muse": "muse",
+    ".native": "native",
+    ".odt": "odt",
+    ".opml": "opml",
+    ".org": "org",
+    ".pdf": "pdf",  # pandoc will generate an "unknown reader"
+    ".pptx": "pptx",
+    ".roff": "ms",
+    ".rst": "rst",
+    ".rtf": "rtf",
+    ".s5": "s5",
+    ".t2t": "t2t",
+    ".tei": "tei",
+    ".tei.xml": "tei",  # won't work, see https://github.com/jgm/pandoc/issues/7630>
+    ".tex": "latex",
     ".texi": "texinfo",
     ".texinfo": "texinfo",
-    ".db": "docbook",
-    ".odt": "odt",
-    ".docx": "docx",
-    ".epub": "epub",
-    ".org": "org",
-    ".asciidoc": "asciidoc",
-    ".adoc": "asciidoc",
-    ".fb2": "fb2",
-    ".opml": "opml",
-    ".icml": "icml",
-    ".tei.xml": "tei",
-    ".tei": "tei",
-    ".ms": "ms",
-    ".roff": "ms",
-    ".pptx": "pptx",
+    ".text": "markdown",
+    ".textile": "textile",
+    ".txt": "markdown",
+    ".wiki": "mediawiki",
     ".xhtml": "html",
-    ".html": "html",
-    ".htm": "html",
+    ".ipynb": "ipynb",
+    ".csv": "csv",
+    ".bib": "biblatex",
 }
 
+for _i in range(1, 10):
+    _ext_to_file_format[f".{_i}"] = "man"
 
-def default_writer_name(filename):
-    if filename.endswith(".tei.xml"):
-        filename = filename[:-4]  # uhu ? test this.
-    _, ext = os.path.splitext(filename)
-    if len(ext) == 2 and ext[1] in "0123456789":
-        return "man"
-    else:
-        return _writers.get(ext)
+
+def format_from_filename(filename):
+    ext = pathlib.Path(filename.lower()).suffix
+    return _ext_to_file_format.get(ext)
 
 
 # TODO: better management for pdf "format" which is not a format according
@@ -399,7 +302,7 @@ def write(doc, file=None, format=None, options=None):
         file = open(filename, "wb")
 
     if format is None and filename is not None:
-        format = default_writer_name(filename)
+        format = format_from_filename(filename)
     if format is None:
         format = "markdown"  # instead of html, yep.
     if format != "json" and _configuration["path"] is None:
@@ -420,8 +323,7 @@ def write(doc, file=None, format=None, options=None):
         output_path = input_path
     else:
         if filename is not None:
-            # preserve extensions (sometimes pandoc looks for the extension,
-            # e.g. for pdf files)
+            # preserve file extensions (for output format inference)
             tmp_filename = os.path.basename(filename)
         else:
             tmp_filename = "output"
@@ -435,8 +337,8 @@ def write(doc, file=None, format=None, options=None):
         pandoc(options)
 
     output_bytes = open(output_path, "rb").read()
-    binary_formats = ["doc", "epub", "ppt", "odt"]
-    if any(tag in format for tag in binary_formats) or output_path.endswith(".pdf"):
+    binary_formats = ["docx", "epub", "epub2", "epub3", "odt", "pdf", "pptx"]
+    if format in binary_formats or output_path.endswith(".pdf"):
         output = output_bytes
     else:  # text format
         output = output_bytes.decode("utf-8")
@@ -612,7 +514,7 @@ def read_json_v2(json_, type_=None):
             constructors = data_type[1][1]
             constructors_names = [constructor[0] for constructor in constructors]
             constructor_name = json_["t"]
-            if constructor_name not in constructors_names: # shadowed
+            if constructor_name not in constructors_names:  # shadowed
                 constructor_name = constructor_name + "_"
                 assert constructor_name in constructors_names
             constructor = getattr(types, constructor_name)._def
@@ -664,7 +566,7 @@ def write_json_v2(object_):
             json_ = [write_json_v2(item) for item in object_]
         elif isinstance(object_, dict):
             json_ = odict((k, write_json_v2(v)) for k, v in object_.items())
-        else:  # primitive type, (including None used by Maybes)
+        else:  # primitive type (including None used by Maybes)
             json_ = object_
     elif isinstance(object_, types.Pandoc):
         version = configure(read=True)["pandoc_types_version"]
@@ -686,7 +588,7 @@ def write_json_v2(object_):
         if not single_type_constructor:
             type_name = type(object_).__name__
             # If an underscore was used to in the type name to avoid a name
-            # collision between a constructor and its parent, remove it for 
+            # collision between a constructor and its parent, remove it for
             # the json representation.
             if type_name.endswith("_"):
                 type_name = type_name[:-1]
@@ -709,54 +611,7 @@ def write_json_v2(object_):
 
 # Iteration
 # ------------------------------------------------------------------------------
-
-# Thoughts:
-#
-#   - maybe 'iter_path' is not the right naming:
-#     I would envision for iter_path something that returns roughly speaking
-#     a list of indices that would allow us to find the element from doc.
-#     What would be the right new name for the old concept of path then?
-#     Have the list of ancestors named "context"? for example?
-#     And have it as supplementary data (also return elt as usual?)
-#     So consider a "mega-iter-named-whataver-with-options" ?
-#     And keep "iter" for the building block? Or use 'iter' for that?
-#     Wrt path as list of indices: have [] (or another function) support
-#     these list of path directly? Yeah would need some support anyway.
-#
-#   - Nota: I have at least 3 different "context" structures that may
-#     be handy:
-#
-#       - the list of parents (say without the elt, aka "context" or "parents"?)
-#
-#       - the list of indices (aka "path")
-#
-#       - a hybrid parent + index tuple list.
-#
-#     And these lists *may* (or may not) be reversed for convenience.
-#     Actually we may keep the top to bottom order and name "path"
-#     the list of pairs. This is a redundant structure (all you need
-#     for example is the root and the indices), but we don't care,
-#     the redundancy is actually convenient.
-#
-#     And add a "path" option to iter to return the (elt, path) pair.
-#     Does it fly? Name ? "path" or "context"? Nah, path ...
-#
-#   - Nota: does it make sense to also use string keys in path for maps?
-#     Several issues: have a look in the complete chain to see if pandoc
-#     map-like structure have their ordered preserved (I think not),
-#     then think "tree/structural" vs value stuff (maps have a varying
-#     number of items for example ...), and finally think of the consistency
-#     of the interface of named keys wrt to "iter" that is 100% integer based.
-#     Nota wrt "non-structural iteration": we are already doing it with lists,
-#     so nothing new here.
-#
-#  - TODO: explore visitor-style stuff (have a look at ANTLR for example)
-#
-#  - TODO: explore functional programming style (e.g. apply for trees, etc.)
-#
-
-
-def iter(elt, path=False, enter=None, exit=None):
+def iter(elt, path=False):
     if path is not False:
         if not isinstance(path, list):  # e.g. path = True
             path = []
@@ -764,9 +619,6 @@ def iter(elt, path=False, enter=None, exit=None):
     args = [elt]
     if path is not False:
         args.append(path)
-
-    if enter is not None:
-        enter(*args)
 
     if path is False:
         yield elt
@@ -781,77 +633,8 @@ def iter(elt, path=False, enter=None, exit=None):
                 child_path = False
             else:
                 child_path = path.copy() + [(elt, i)]
-            for subelt in iter(child, path=child_path, enter=enter, exit=exit):
+            for subelt in iter(child, path=child_path):
                 yield subelt
-
-    if exit is not None:
-        exit(*args)
-
-
-def iter_path(elt):
-    path = []
-
-    def enter(elt_):
-        path.append(elt_)
-
-    def exit(elt_):
-        path.pop()
-
-    for elt_ in iter(elt, enter=enter, exit=exit):
-        yield path
-
-class Symbol(str):
-    def __new__(cls, *args, **kw):
-        return str.__new__(cls, *args, **kw)
-    def __repr__(self):
-        return str(self)
-
-ENTER = Symbol("ENTER")
-EXIT = Symbol("EXIT")
-
-
-
-# class Iter2:
-#     def __init__(root, path=None, way=None):
-#         if path is None:
-#             path = []
-#         if way is None:
-#             way = ENTER
-#         self.root = root
-#         self.path = path
-#         self.way = way
-#     def __iter__(self):
-#         return self
-#     def __next__(self):
-#         if self.way == ENTER:
-#             if self.path == []:
-#                 return self.root, ENTER
-#             else:
-#                 parent, index = self.path[-1]
-#                 return parent[index], ENTER
-            
-#             else:
-#                 parent, index = self.path[-1]
-#                 if not hasattr(parent, "__getitem__") or isinstance(parent, str):
-#                     return self.elt, EXIT
-#                 if isinstance(parent, dict):
-#                     parent = list(parent.items())
-#                 try:
-#                     elt = parent[index]
-#                     self.path.append((elt, 0))
-#                 except IndexError:
-#                     self.way = EXIT
-#                     return parent, EXIT
-
-                
-
-
-def get_parent(doc, elt):
-    for path in iter_path(doc):
-        elt_ = path[-1]
-        if elt is elt_:
-            parent = path[-2] if len(path) >= 2 else None
-            return parent
 
 
 # Functional Transformation Patterns (Scrap-Your-Boilerplate-ish)
@@ -874,10 +657,11 @@ def _apply_children(f, elt):
         assert type(elt) in [bool, int, float, str]
         return elt
 
-def apply(f, elt=None): # apply the transform f bottom-up
+
+def apply(f, elt=None):  # apply the transform f bottom-up
     f_ = f
 
-    def f(elt): # sugar : no return value means no change 
+    def f(elt):  # sugar : no return value means no change
         new_elt = f_(elt)
         if new_elt is not None:
             return new_elt
@@ -898,12 +682,8 @@ def apply(f, elt=None): # apply the transform f bottom-up
 
 # Main Entry Point
 # ------------------------------------------------------------------------------
-# TODO : support custom indendation for Python output.
-# BUG : by using files instead of filenames in argparse types,
-#       we are losing the extension info and cannot select the proper format.
-#       This is an issue in itself ; but since we use the pandoc convention
-#       not to have "pdf" as an output format per se, that means that we
-#       cannot output pdf at all.
+# TODO: use argparse.FileType and access the filename attribute when needed.
+#       see https://stackoverflow.com/questions/19656426/how-to-get-filename-with-argparse-while-specifying-type-filetype-for-this-a
 def main():
     prog = "python -m pandoc"
     description = "Read/write pandoc documents with Python"

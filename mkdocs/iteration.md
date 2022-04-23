@@ -1,9 +1,3 @@
-!!! warning
-    This documentation is dedicated to the [latest version of the project
-    available on github](https://github.com/boisgera/pandoc). 
-    It is automatically tested against pandoc 2.14.2,
-    [the latest release of pandoc](https://pandoc.org/releases.html) so far.
-
 
 Containers and iteration
 ================================================================================
@@ -126,6 +120,20 @@ Meta({})
 >>> for elt in world:
 ...      print(elt)
 world!
+```
+
+### Pattern matching
+
+With Python 3.10 (or newer), pattern matching can be used for every
+Pandoc element:
+
+``` pycon
+>>> doc = pandoc.read("Hello world!")
+>>> match doc:
+...     case Pandoc(Meta(meta), [Para(inlines)]):
+...         assert meta == {}
+...         print(inlines)
+[Str('Hello'), Space(), Str('world!')]
 ```
 
 Tree Iteration

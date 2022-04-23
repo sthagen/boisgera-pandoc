@@ -1,13 +1,6 @@
 Document structure
 ================================================================================
 
-
-!!! warning
-    This documentation is dedicated to the [latest version of the project
-    available on github](https://github.com/boisgera/pandoc). 
-    It is automatically tested against pandoc 2.14.2,
-    [the latest release of pandoc](https://pandoc.org/releases.html) so far.
-
 ``` python
 import pandoc
 from pandoc.types import *
@@ -348,6 +341,8 @@ Link(Attr, [Inline], Target)
 instead of `Link((Text, [Text], [(Text, Text)]), [Inline], (Text, Text))`
 without them.
 
+<!--
+
 ???+ error "TODO"
     Generate error on `isinstance` test for typedefs, even if structurally valid.
     Or tweak isinstance to make the appropriare structural test?
@@ -355,6 +350,7 @@ without them.
     type checking construct.
 
     `isinstance(("text", "text"), Target)` ???
+-->
 
 
 To mimick closely the original Haskell type hierarchy, we also define aliases 
@@ -366,7 +362,6 @@ data constructor is not a custom Pandoc type:
 Str(Text)
 >>> issubclass(Text, Type)
 False
->>>
 ```
 
 Instead, it's a mere alias for the builtin Python string:

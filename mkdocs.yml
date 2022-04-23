@@ -1,19 +1,21 @@
-site_name: Pandoc
+site_name: Pandoc (Python)
 
 docs_dir: mkdocs
 
 site_dir: docs
 
 nav:
-  - Overview (wip): index.md
-  - Examples (wip): examples.md
-  - CLI (wip): cli.md
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Examples: examples.md
   - Document structure: document.md
   - Pandoc's Markdown: markdown.md
   - Containers and iteration: iteration.md
   - Configuration: configuration.md
-  - Cookbook (wip): cookbook.md
-  - API reference (wip): api.md
+  - Cookbook: cookbook.md
+  - Command-line interface: cli.md
+  - API reference: api.md
+  - Changelog: changelog.md
 
 theme: "material" 
 
