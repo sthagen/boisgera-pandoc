@@ -1,15 +1,12 @@
-name: build
-on:
-  push:
-    branches:
-      - master
+name: windows
+on: [workflow_dispatch]
 
 jobs:
   main:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [windows-latest]
     defaults:
       run:
         shell: bash -l {0} 
@@ -22,18 +19,6 @@ jobs:
         with:
           activate-environment: pandoc
           environment-file: environment.yml
-
-      - name: Install LaTeX (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install texlive-full
-
-      - name: Install LaTeX (MacOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          brew install --cask mactex
 
       - name: Install LaTeX (Windows)
         if: matrix.os == 'windows-latest'
@@ -71,27 +56,8 @@ jobs:
           mpm --find-updates
           mpm --admin --find-updates
 
-
       - name: Install Python pandoc 
         run: python setup.py install
 
       - name: Test Python pandoc
         run: python test.py && python test.py -v
-
-      - name: Build documentation (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: mkdocs build
-
-      - name: Prepare documentation deployment (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: rm .gitignore
-
-      - name: Deploy documentation (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        uses: JamesIves/github-pages-deploy-action@3.7.1
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: gh-pages
-          FOLDER: "docs"
-          SINGLE_COMMIT: true
-          PRESERVE: true
