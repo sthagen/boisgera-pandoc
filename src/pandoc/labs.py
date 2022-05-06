@@ -78,6 +78,7 @@ def to_function(predicate):
         raise TypeError(error)
 
 def not_(predicate):
+    predicate = to_function(predicate)
     return lambda *args, **kwargs: not predicate(*args, **kwargs)
 
 # Queries & Results
@@ -93,13 +94,14 @@ def _getitem(sequence, indices):
     return sequence[indices]
 
 class Query: 
-    def __init__(self, *results):
+    def __init__(self, results):
         self._elts = []
-        for result in results:
-            if isinstance(result, Query):
-                self._elts.extend(result._elts) # Mmmm ownership issues
-            else: # "raw results": list of (elt, path)
-                self._elts.extend(result)
+        if isinstance(results, tuple):
+            results = [results]
+        if isinstance(results, Query):
+            self._elts.extend(results._elts) # Mmmm ownership issues. Copy?
+        else: # "raw results": list of (elt, path)
+            self._elts.extend(results)
 
     # ℹ️ The call `find(object)` is public and equivalent to `_iter()`.
     def _iter(self):
@@ -164,6 +166,8 @@ class Query:
 
             if isinstance(i, int):
                 try:
+                    if i < 0:
+                        i += len(elt)
                     child = children[i]
                     results.append((child, elt_path.copy() + [(elt, i)]))
                 except IndexError:
@@ -185,6 +189,61 @@ class Query:
     parent = property(get_parent)
 
     def get_next(self):
+        results = []
+        for elt, elt_path in self._elts:
+            try: # try to go inside elt first
+                first_child = _getitem(elt, 0)
+                results.append((first_child, elt_path + [(elt, 0)]))
+                continue
+            except (IndexError, TypeError):
+                pass
+
+            q = Query([(elt, elt_path)])
+            # Try the next sibling, if it doesn't exist the parent next sibling, etc.
+            while True:
+                next_ = q.next_sibling
+                if next_:
+                    results.append(next_._elts[0])
+                    break
+                else:
+                    parent = q.parent
+                    if not parent: # we're back at the root
+                        break
+                    else:
+                        q = parent
+
+        return Query(results)
+
+    next = property(get_next)
+
+    # 🚧 TODO: previous
+
+    def get_previous(self):
+        results = []
+        for elt, elt_path in self._elts:
+
+            # TODO: try deeper in the previous sibling first
+            #       or the previous sibling
+            #       or of there is no previous sibling, the parent
+
+            previous_sibling = Query([(elt, elt_path)]).previous_sibling
+            if previous_sibling:
+                last_child = previous_sibling
+                while child := last_child.get_child(-1):
+                    last_child = child
+                    pass
+                results.append(last_child._elts[0])
+            elif parent := Query([(elt, elt_path)]).parent:
+                results.append(parent._elts[0])
+            else:
+                pass
+
+        return Query(results)
+
+    previous = property(get_previous)
+
+
+    def get_next_sibling(self):
         indices = [path[-1][1] for elt, path in self._elts if path != []]
         results = []
         for (parent_elt, parent_path), index in zip(self.parent._elts, indices):
@@ -195,9 +254,9 @@ class Query:
                 pass
         return Query(results)
 
-    next = property(get_next)
+    next_sibling = property(get_next_sibling)
 
-    def get_prev(self):
+    def get_previous_sibling(self):
         indices = [path[-1][1] for elt, path in self._elts if path != []]
         results = []
         for (parent_elt, parent_path), index in zip(self.parent._elts, indices):
@@ -209,17 +268,20 @@ class Query:
                     pass
         return Query(results)
 
-    prev = property(get_prev)
+    previous_sibling = property(get_previous_sibling)
 
-    # Query container (hide path info)
+    # Query container (hide path info). Or maybe not? Be more explicit?
     # --------------------------------------------------------------------------
     def __len__(self):
         return len(self._elts)
 
-    def __getitem__(self, i):
-        return Query([self._elts[i]])
+    def __bool__(self):
+        return len(self._elts) != 0
 
-    def __iter__(self):
+    def __getitem__(self, i):
+        return Query(self._elts[i])
+
+    def __iter__(self): # unwrap or not? Mmmm maybe no.
         return (elt for elt, _ in self._elts)
 
     def __repr__(self):
