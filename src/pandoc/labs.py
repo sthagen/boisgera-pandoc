@@ -4,7 +4,7 @@ Design
 
 TODO: first step: forget about lazyness and performance.
 
-Fundamental object: Query.
+Fundamental object: Query. NO, see below
 
   - Query defined independently of the root(s) it will be applied to.
 
@@ -48,6 +48,42 @@ Fundamental object: Query.
 
   - Iteration ? Query as a container "removes" path info by default so that
     we can deal with a list of "document items", make comprehensions, etc.
+
+
+New Take
+--------------------------------------------------------------------------------
+
+  - We have PREDICATES first: stuff that takes an elt and returns a bool.
+
+  - We have a list of "fancy", parametrized predicates (match the id, match
+    the type, etc.).
+
+  - Predicates are functions (elt -> True) that have some extra support for
+    |, & and ~ (and/or the or_, and_ and not_ methods?). But not that a
+    "filter" method (or __call__) on Elements/Collections could/does work
+    as a "and", so multiple args in () could work has a "or" and we merely
+    need a not to be complete (we have a conjonctive normal form).
+
+  - On an elt or a collection of elements, we can either query using a 
+    predicate or filter using a predicate. Query is get everything + filter.
+    Have a look at rethinkdb for the terminology? And/or pandas?
+    Terminology: "run" a query. Rethinkdb uses a chain with "." + final "run()"
+    to get the results of a query that runs.
+    In db-land, there is an iteration by default?
+    But not a recursive structure ... JQuery would be a better reference I 
+    guess, because of its tree structure.
+
+    The find vs filter distinction is more JQuery-ish.
+
+
+  - Anyway, we have a elts + predicates -> elts function, that we should be
+    able to chain.
+
+  - Also, transforms (elts -> elts, such a .children) and apply (returns
+    anything).
+
+
+
 """
 
 # 🚧: Document that multiple arguments + `not_` + chaining calls allows to
@@ -77,14 +113,17 @@ def to_function(predicate):
         error += f", not {predicate!r}"
         raise TypeError(error)
 
+
 def not_(predicate):
     predicate = to_function(predicate)
     return lambda *args, **kwargs: not predicate(*args, **kwargs)
+
 
 # Queries & Results
 # ------------------------------------------------------------------------------
 def query(root):
     return Query([(root, [])])
+
 
 def _getitem(sequence, indices):
     if not hasattr(sequence, "__getitem__") or isinstance(sequence, str):
@@ -93,14 +132,20 @@ def _getitem(sequence, indices):
         sequence = list(sequence.items())
     return sequence[indices]
 
-class Query: 
+
+# 💭 "Query" probably inappropriate since the queries are the method calls,
+# not the object itself. The object would be a "collection", "elements",
+# "forest", "results", that kind of thing.
+
+
+class Query:
     def __init__(self, results):
         self._elts = []
         if isinstance(results, tuple):
             results = [results]
         if isinstance(results, Query):
-            self._elts.extend(results._elts) # Mmmm ownership issues. Copy?
-        else: # "raw results": list of (elt, path)
+            self._elts.extend(results._elts)  # Mmmm ownership issues. Copy?
+        else:  # "raw results": list of (elt, path)
             self._elts.extend(results)
 
     # ℹ️ The call `find(object)` is public and equivalent to `_iter()`.
@@ -115,11 +160,11 @@ class Query:
     # 🚧 Think of a rename given that we now can expose this as a property
     #    (optionally restricted with a call). We can keep find and the
     #    "functionally flavor", but a more content-oriented alias would
-    #    be nice (descendants? But we also return the node itself. 
+    #    be nice (descendants? But we also return the node itself.
     #    Subtree? Tree? Contents?)
     def find(self, *predicates):
         return self._iter().filter(*predicates)
-    
+
     def filter(self, *predicates):
         predicates = [to_function(predicate) for predicate in predicates]
         results = []
@@ -130,9 +175,9 @@ class Query:
                     break
         return Query(results)
 
-    # ✨ This is sweet! The intended usage is `.property(test)`, 
-    #    which emulates the jquery API where functions can restrict the match. 
-    #    It also allows us call the "functions" without parentheses 
+    # ✨ This is sweet! The intended usage is `.property(test)`,
+    #    which emulates the jquery API where functions can restrict the match.
+    #    It also allows us call the "functions" without parentheses
     #    when no restriction is needed.
     def __call__(self, *predicates):
         return self.filter(*predicates)
@@ -191,7 +236,7 @@ class Query:
     def get_next(self):
         results = []
         for elt, elt_path in self._elts:
-            try: # try to go inside elt first
+            try:  # try to go inside elt first
                 first_child = _getitem(elt, 0)
                 results.append((first_child, elt_path + [(elt, 0)]))
                 continue
@@ -207,7 +252,7 @@ class Query:
                     break
                 else:
                     parent = q.parent
-                    if not parent: # we're back at the root
+                    if not parent:  # we're back at the root
                         break
                     else:
                         q = parent
@@ -242,14 +287,15 @@ class Query:
 
     previous = property(get_previous)
 
-
     def get_next_sibling(self):
         indices = [path[-1][1] for elt, path in self._elts if path != []]
         results = []
         for (parent_elt, parent_path), index in zip(self.parent._elts, indices):
-            try: # 🚧 TODO: adaptation of [] for dicts and strings (use _getitem).             
+            try:  # 🚧 TODO: adaptation of [] for dicts and strings (use _getitem).
                 next_element = parent_elt[index + 1]
-                results.append((next_element, parent_path.copy() + [(parent_elt, index+1)]))
+                results.append(
+                    (next_element, parent_path.copy() + [(parent_elt, index + 1)])
+                )
             except IndexError:
                 pass
         return Query(results)
@@ -261,9 +307,11 @@ class Query:
         results = []
         for (parent_elt, parent_path), index in zip(self.parent._elts, indices):
             if index > 0:
-                try: # 🚧 TODO: adaptation of [] for dicts and strings (& factor out).
+                try:  # 🚧 TODO: adaptation of [] for dicts and strings (& factor out).
                     next_element = parent_elt[index - 1]
-                    results.append((next_element, parent_path.copy() + [(parent_elt, index-1)]))
+                    results.append(
+                        (next_element, parent_path.copy() + [(parent_elt, index - 1)])
+                    )
                 except IndexError:
                     pass
         return Query(results)
@@ -281,7 +329,7 @@ class Query:
     def __getitem__(self, i):
         return Query(self._elts[i])
 
-    def __iter__(self): # unwrap or not? Mmmm maybe no.
+    def __iter__(self):  # unwrap or not? Mmmm maybe no.
         return (elt for elt, _ in self._elts)
 
     def __repr__(self):
