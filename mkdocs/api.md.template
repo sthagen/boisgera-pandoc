@@ -314,7 +314,7 @@ from pandoc.types import *
 
     <h5>See also</h5>
 
-    Refer to the [Tree iteration section](#tree-iteration).
+    Refer to the [Tree iteration section](../iteration#tree-iteration).
 
 
 ??? note "`configure(auto=False, path=None, version=None, pandoc_types_version=None, read=False, reset=False)`"
@@ -351,8 +351,8 @@ from pandoc.types import *
     >>> config # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
     {'auto': True, 
      'path': ..., 
-     'version': '3.1.1', 
-     'pandoc_types_version': '1.23'}
+     'version': '3.2.1', 
+     'pandoc_types_version': '1.23.1'}
     ```
     To avoid this, call `pandoc.configure(...)` yourself beforehand.
     Alternatively, select manually your pandoc executable afterwards:
@@ -366,13 +366,13 @@ from pandoc.types import *
     >>> pandoc.configure(read=True) # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
     {'auto': False, 
      'path': ..., 
-     'version': '3.1.1', 
-     'pandoc_types_version': '1.23'}    
+     'version': '3.2.1', 
+     'pandoc_types_version': '1.23.1'}    
     ```
 
     <h5>See also</h5>
 
-    Refer to the [Configuration section](#configuration).
+    Refer to the [Configuration section](../configuration).
 
 
 `pandoc.types`
